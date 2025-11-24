@@ -3,14 +3,22 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "@/components/home/Home.jsx";
 import Client from "@/components/client/Client.jsx";
 import ClientDashboard from "@/components/client/ClientDashboard.jsx";
+import ClientProposal from "@/components/client/ClientProposal.jsx";
+import ClientProjects from "@/components/client/ClientProjects.jsx";
+import ClientProjectDetail from "@/components/client/ClientProjectDetail.jsx";
+import ClientChat from "@/components/client/ClientChat.jsx";
 import { ThemeProvider } from "./components/theme-provider";
 import Navbar from "./components/Navbar";
 import SignupPage from "./components/forms/Signup";
 import LoginPage from "./components/forms/Login";
 import FreelancerDashboard from "@/components/freelancer/FreelancerDashboard";
+import FreelancerProposal from "@/components/freelancer/FreelancerProposal";
 import FreelancerProfile from "@/components/freelancer/FreelancerProfile";
-import FreelancerMultiStepForm from "@/components/freelancer/multi-step-form";
+import FreelancerProjects from "@/components/freelancer/FreelancerProjects";
+import FreelancerProjectDetail from "@/components/freelancer/FreelancerProjectDetail";
+import FreelancerChat from "@/components/freelancer/FreelancerChat";
 import { useAuth } from "@/context/AuthContext";
+import  FreelancerMultiStepForm  from "./components/freelancer/multi-step-form";
 
 const App = () => {
   return (
@@ -28,9 +36,7 @@ const App = () => {
           <Route
             path="/signup"
             element={
-              <LayoutWithNavbar>
                 <SignupPage />
-              </LayoutWithNavbar>
             }
           />
           <Route
@@ -50,6 +56,38 @@ const App = () => {
             }
           />
           <Route
+            path="/client/project"
+            element={
+              <ProtectedRoute>
+                <ClientProjects />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client/project/:projectId"
+            element={
+              <ProtectedRoute>
+                <ClientProjectDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client/proposal"
+            element={
+              <ProtectedRoute>
+                <ClientProposal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client/messages"
+            element={
+              <ProtectedRoute>
+                <ClientChat />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/service"
             element={
               <LayoutWithNavbar>
@@ -62,6 +100,62 @@ const App = () => {
             element={
               <ProtectedRoute>
                 <FreelancerDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancer/proposals"
+            element={
+              <ProtectedRoute>
+                <FreelancerProposal />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancer/proposals/drafts"
+            element={
+              <ProtectedRoute>
+                <FreelancerProposal filter="draft" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancer/proposals/received"
+            element={
+              <ProtectedRoute>
+                <FreelancerProposal filter="received" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancer/proposals/accepted"
+            element={
+              <ProtectedRoute>
+                <FreelancerProposal filter="accepted" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancer/project"
+            element={
+              <ProtectedRoute>
+                <FreelancerProjects />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancer/project/:projectId"
+            element={
+              <ProtectedRoute>
+                <FreelancerProjectDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/freelancer/messages"
+            element={
+              <ProtectedRoute>
+                <FreelancerChat />
               </ProtectedRoute>
             }
           />
