@@ -1,8 +1,8 @@
 import ClientOnboading from "./ClientOnboading";
-import CursorSpotlight from "@/components/ui/cursor-spotlight";
 
 const Client = () => {
   return (
+<<<<<<< HEAD
     <main className="relative min-h-screen bg-background text-foreground overflow-hidden transition-colors">
       <CursorSpotlight />
       <div
@@ -17,6 +17,10 @@ const Client = () => {
       />
 
       <div className="relative z-10 max-w-[90rem] mx-auto px-6 py-16">
+=======
+    <main className="min-h-screen bg-background text-foreground transition-colors">
+      <div className="max-w-6xl mx-auto px-6 py-16">
+>>>>>>> 47ee7898ed163d58cdca475704b02e068fd03cc0
         <ClientOnboading />
       </div>
     </main>
