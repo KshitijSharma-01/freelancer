@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   CheckCircle2,
@@ -77,6 +77,15 @@ const mockProposals = [
   },
 ]
 
+const loadSentProposals = () => {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("client:sentProposals") || "[]");
+  } catch {
+    return [];
+  }
+};
+
 const ProposalCard = ({ proposal }) => {
   const config = statusConfig[proposal.status]
   const StatusIcon = config.icon
@@ -120,20 +129,6 @@ const ProposalCard = ({ proposal }) => {
                 </p>
               </div>
               <div>
-                <p className="uppercase tracking-widest text-[10px]">ID</p>
-                <p className="font-medium text-foreground">
-                  {proposal.recipientId}
-                </p>
-              </div>
-              <div className="hidden lg:block">
-                <p className="uppercase tracking-widest text-[10px]">
-                  Proposal ID
-                </p>
-                <p className="font-mono text-foreground">
-                  {proposal.proposalId}
-                </p>
-              </div>
-              <div>
                 <p className="uppercase tracking-widest text-[10px]">
                   Submitted
                 </p>
@@ -144,7 +139,7 @@ const ProposalCard = ({ proposal }) => {
             </div>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-2 self-start lg:self-auto">
+          <div className="flex flex-shrink-0 flex-col items-center gap-2 self-start lg:self-auto">
             <Button
               asChild
               size="sm"
@@ -170,13 +165,70 @@ const ProposalCard = ({ proposal }) => {
 }
 
 const ClientProposalContent = () => {
+  const [proposals, setProposals] = useState(mockProposals);
+
+  useEffect(() => {
+    const stored = loadSentProposals();
+    if (stored.length) {
+      setProposals((prev) => {
+        const ids = new Set(prev.map((p) => p.id));
+        const normalized = stored.map((p) => ({
+          ...p,
+          category: p.service || p.category || "General",
+          status: p.status || "sent",
+          avatar:
+            p.avatar ||
+            "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=256&q=80",
+          recipientName: p.recipientName || "Freelancer",
+          recipientId: p.recipientId || "FREELANCER",
+          submittedDate: p.submittedDate || new Date().toLocaleDateString(),
+          proposalId: p.proposalId || `PRP-${Math.floor(Math.random() * 9000 + 1000)}`
+        }));
+        const merged = [...normalized.filter((p) => !ids.has(p.id)), ...prev];
+        return merged;
+      });
+    }
+  }, []);
+
+  const grouped = useMemo(() => {
+    return proposals.reduce(
+      (acc, proposal) => {
+        acc[proposal.status] = [...(acc[proposal.status] || []), proposal];
+        return acc;
+      },
+      { pending: [], sent: [], accepted: [] }
+    );
+  }, [proposals]);
+
+  const sectionsToRender = [
+    { key: "pending", title: "Pending" },
+    { key: "sent", title: "Sent" },
+    { key: "accepted", title: "Accepted" }
+  ];
+
   return (
     <div className="space-y-6 p-6">
       <ClientTopBar />
 
-      <div className="space-y-4">
-        {mockProposals.map((proposal) => (
-          <ProposalCard key={proposal.id} proposal={proposal} />
+      <div className="space-y-6">
+        {sectionsToRender.map(({ key, title }) => (
+          <div key={key} className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{title}</h2>
+              <Badge variant="outline">{grouped[key]?.length || 0}</Badge>
+            </div>
+            {grouped[key]?.length ? (
+              <div className="space-y-4">
+                {grouped[key].map((proposal) => (
+                  <ProposalCard key={proposal.id} proposal={proposal} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-6 text-sm text-muted-foreground">
+                No {title.toLowerCase()} proposals yet.
+              </div>
+            )}
+          </div>
         ))}
       </div>
     </div>
