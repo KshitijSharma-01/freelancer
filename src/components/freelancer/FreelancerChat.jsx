@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FreelancerTopBar } from "@/components/freelancer/FreelancerTopBar";
-import { SendHorizontal, Paperclip, Loader2, Clock4 } from "lucide-react";
+import { SendHorizontal, Paperclip, Loader2, Clock4, Bot, User } from "lucide-react";
 import { apiClient, SOCKET_IO_URL, SOCKET_OPTIONS, SOCKET_ENABLED } from "@/lib/api-client";
 import { useAuth } from "@/context/AuthContext";
 
@@ -51,11 +51,11 @@ const ChatArea = ({
       <div className="sticky top-0 z-10 flex items-center gap-4 border-b border-border/40 bg-card/60 px-8 py-5 backdrop-blur-xl">
         <div className="relative">
           <Avatar className="h-12 w-12">
-          <AvatarImage src={"/placeholder.svg"} alt={conversationName} />
-          <AvatarFallback className="bg-primary/20 text-primary">
-            {conversationName?.[0] || "C"}
-          </AvatarFallback>
-        </Avatar>
+            <AvatarImage src={"/placeholder.svg"} alt={conversationName} />
+            <AvatarFallback className="bg-primary/20 text-primary">
+              {conversationName?.[0] || "C"}
+            </AvatarFallback>
+          </Avatar>
           <span
             className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-card ${
               online ? "bg-emerald-500" : "bg-muted-foreground/40"
@@ -65,9 +65,7 @@ const ChatArea = ({
         </div>
         <div>
           <p className="text-lg font-semibold">{conversationName}</p>
-          <p className="text-xs text-muted-foreground">
-            {online ? "Online" : "Offline"}
-          </p>
+          <p className="text-xs text-muted-foreground">{online ? "Online" : "Offline"}</p>
         </div>
         <Badge variant="outline" className="ml-auto">
           Live
@@ -80,6 +78,9 @@ const ChatArea = ({
           const isAssistant = message.role === "assistant";
           const align = isAssistant || !isSelf ? "justify-start" : "justify-end";
           const isDeleted = message.deleted || message.isDeleted;
+          const isClient = message.senderRole === "CLIENT";
+          const isFreelancer = message.senderRole === "FREELANCER";
+
           const bubbleStyle = (() => {
             if (isAssistant) {
               return {
@@ -95,14 +96,14 @@ const ChatArea = ({
                 border: `1px solid var(--chat-bubble-border)`
               };
             }
-            if (message.senderRole === "CLIENT") {
+            if (isClient) {
               return {
                 backgroundColor: "var(--chat-bubble-client)",
                 color: "var(--chat-bubble-client-text)",
                 border: `1px solid var(--chat-bubble-border)`
               };
             }
-            if (message.senderRole === "FREELANCER") {
+            if (isFreelancer) {
               return {
                 backgroundColor: "var(--chat-bubble-freelancer)",
                 color: "var(--chat-bubble-freelancer-text)",
@@ -126,10 +127,16 @@ const ChatArea = ({
           return (
             <div key={message.id || index} className={`flex ${align}`}>
               <div
-                className="max-w-[70%] md:max-w-[60%] rounded-sm px-4 py-1.5 text-sm flex items-baseline gap-2 overflow-hidden"
+                className="max-w-[85%] md:max-w-[85%] rounded-sm px-4 py-1.5 text-sm flex items-baseline gap-2 overflow-hidden"
                 style={bubbleStyle}
                 role="group"
               >
+                <div className="flex items-center gap-2 text-[11px] font-medium opacity-80">
+                  {isAssistant ? <Bot className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
+                  <span className="capitalize">
+                    {isAssistant ? "Assistant" : isClient ? "Client" : "Freelancer"}
+                  </span>
+                </div>
                 {isDeleted ? (
                   <>
                     <Clock4 className="h-4 w-4 flex-shrink-0 opacity-70" />
@@ -142,7 +149,7 @@ const ChatArea = ({
                     className="leading-relaxed whitespace-pre-wrap flex-1"
                     style={{
                       overflowWrap: "break-word",
-                      wordBreak: "break-all"
+                      wordBreak: "break-word"
                     }}
                   >
                     {message.content}
