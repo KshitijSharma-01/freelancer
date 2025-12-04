@@ -390,31 +390,119 @@ export const listUserConversations = asyncHandler(async (req, res) => {
     throw new AppError("Unauthorized", 401);
   }
 
-  const conversations = await prisma.chatConversation.findMany({
-    where: { createdById: userId },
-    orderBy: { updatedAt: "desc" },
-    take: 100,
-    include: {
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
+  // Gather proposals for projects owned by this user (accepted) to derive project-specific chat threads.
+  const proposals = await prisma.proposal.findMany({
+    where: {
+      project: { ownerId: userId },
+      freelancerId: { not: userId },
+      status: { in: ["ACCEPTED"] }, // ProposalStatus enum values
     },
+    include: { freelancer: true, project: true },
+    orderBy: { createdAt: "desc" },
+    take: 200,
   });
 
-  const data = conversations.map((c) => ({
-    id: c.id,
-    service: c.service,
-    createdAt: c.createdAt,
-    updatedAt: c.updatedAt,
-    createdById: c.createdById,
-    lastMessage: c.messages?.[0]
-      ? serializeMessage({
-          ...c.messages[0],
-          createdAt: c.messages[0].createdAt,
-        })
-      : null,
-  }));
+  // Build a lookup of serviceKey -> meta from proposals
+  const serviceMeta = new Map();
+  const serviceKeys = [];
+  for (const proposal of proposals) {
+    const projectId = proposal.project?.id;
+    if (!projectId) continue;
+    
+    const ownerId = proposal.project?.ownerId;
+    const freelancerId = proposal.freelancerId;
+    
+    // Use consistent key format: CHAT:CLIENT_ID:FREELANCER_ID
+    const serviceKey = `CHAT:${ownerId}:${freelancerId}`;
+    
+    serviceKeys.push(serviceKey);
+    serviceMeta.set(serviceKey, {
+      freelancerName:
+        proposal.freelancer?.fullName ||
+        proposal.freelancer?.name ||
+        proposal.freelancer?.email ||
+        "Freelancer",
+      projectTitle: proposal.project?.title || "Project Chat",
+    });
+  }
+
+  // Pull conversations that match the project+freelancer service keys.
+  const conversations = serviceKeys.length
+    ? await prisma.chatConversation.findMany({
+        where: { service: { in: serviceKeys } },
+        orderBy: { updatedAt: "desc" },
+        include: {
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+          _count: {
+            select: { messages: true },
+          },
+        },
+      })
+    : [];
+
+  // Ensure a conversation exists for each service key.
+  const byService = new Map();
+
+  // Helper to determine which conversation is "better"
+  const isBetterConversation = (current, candidate) => {
+    const currentHasMessages =
+      current.messages.length > 0 || (current._count?.messages || 0) > 0;
+    const candidateHasMessages =
+      candidate.messages.length > 0 || (candidate._count?.messages || 0) > 0;
+
+    if (candidateHasMessages && !currentHasMessages) return true;
+    if (!candidateHasMessages && currentHasMessages) return false;
+
+    // If both have messages or both don't, prefer the newer one (updatedAt)
+    return new Date(candidate.updatedAt) > new Date(current.updatedAt);
+  };
+
+  for (const convo of conversations) {
+    if (convo.service) {
+      if (!byService.has(convo.service)) {
+        byService.set(convo.service, convo);
+      } else {
+        const current = byService.get(convo.service);
+        if (isBetterConversation(current, convo)) {
+          byService.set(convo.service, convo);
+        }
+      }
+    }
+  }
+
+  for (const key of serviceKeys) {
+    if (!byService.has(key)) {
+      // Create if missing. Note: createdById is just for record keeping,
+      // it doesn't restrict who can see it (that's done by service key logic).
+      const convo = await prisma.chatConversation.create({
+        data: { service: key, createdById: userId },
+      });
+      byService.set(key, { ...convo, messages: [] });
+    }
+  }
+
+  // Build response sorted by updatedAt desc.
+  const data = Array.from(byService.values())
+    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+    .map((conversation) => {
+      const meta = serviceMeta.get(conversation.service) || {};
+      return {
+        id: conversation.id,
+        service: conversation.service,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
+        createdById: conversation.createdById,
+        freelancerName: meta.freelancerName || "Freelancer",
+        projectTitle:
+          meta.projectTitle || conversation.service || "Conversation",
+        lastMessage: conversation.messages?.[0]
+          ? serializeMessage(conversation.messages[0])
+          : null,
+      };
+    });
 
   res.json({ data });
 });
@@ -437,15 +525,20 @@ export const createConversation = asyncHandler(async (req, res) => {
   // Always start a fresh persisted conversation to avoid reusing old threads on refresh.
   // For client/freelancer chat we should keep one thread per service + creator
   // so history stays intact across refreshes.
-  let conversation =
-    (serviceKey || createdById) &&
-    (await prisma.chatConversation.findFirst({
-      where: {
-        service: serviceKey,
-        createdById,
+  let conversation = null;
+
+  if (serviceKey) {
+    const candidates = await prisma.chatConversation.findMany({
+      where: { service: serviceKey },
+      include: {
+        _count: { select: { messages: true } },
       },
-      orderBy: { createdAt: "desc" },
-    }));
+      orderBy: { updatedAt: "desc" },
+    });
+
+    // Pick the one with messages, or the newest one
+    conversation = candidates.find((c) => c._count.messages > 0) || candidates[0];
+  }
 
   if (!conversation) {
     conversation = await prisma.chatConversation.create({
@@ -583,15 +676,17 @@ export const addConversationMessage = asyncHandler(async (req, res) => {
   }
 
   if (!conversation) {
-    conversation =
-      (serviceKey || senderId) &&
-      (await prisma.chatConversation.findFirst({
-        where: {
-          service: serviceKey,
-          createdById: senderId || null,
+    if (serviceKey) {
+      const candidates = await prisma.chatConversation.findMany({
+        where: { service: serviceKey },
+        include: {
+          _count: { select: { messages: true } }
         },
-        orderBy: { createdAt: "desc" },
-      }));
+        orderBy: { updatedAt: "desc" }
+      });
+      // Pick the one with messages, or the newest one
+      conversation = candidates.find(c => c._count.messages > 0) || candidates[0];
+    }
   }
 
   // If still no conversation was found, create a new one.
@@ -656,4 +751,3 @@ export const addConversationMessage = asyncHandler(async (req, res) => {
     },
   });
 });
-
