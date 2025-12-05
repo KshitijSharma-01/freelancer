@@ -207,7 +207,7 @@ const ChatArea = ({
 };
 
 const FreelancerChatContent = () => {
-  const { user, authFetch } = useAuth();
+  const { user, authFetch, token } = useAuth();
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
@@ -232,7 +232,14 @@ const FreelancerChatContent = () => {
   const fetchMessages = async () => {
     if (!conversationId) return;
     try {
-      const payload = await apiClient.fetchChatMessages(conversationId);
+      const response = await authFetch(`/chat/conversations/${conversationId}/messages`, {
+        method: "GET",
+        skipLogoutOn401: true
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch messages (status ${response.status})`);
+      }
+      const payload = await response.json().catch(() => null);
       const nextMessages =
         payload?.data?.messages || payload?.messages || [];
       setMessages(nextMessages);
@@ -345,9 +352,20 @@ const FreelancerChatContent = () => {
           setConversationId(stored);
           return;
         }
-        const conversation = await apiClient.createChatConversation({
-          service: selectedConversation.serviceKey || selectedConversation.label || SERVICE_LABEL
+        if (!authFetch || !token) return;
+        const response = await authFetch("/chat/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            service: selectedConversation.serviceKey || selectedConversation.label || SERVICE_LABEL
+          }),
+          skipLogoutOn401: true
         });
+        if (!response.ok) {
+          throw new Error(`Failed to start conversation (status ${response.status})`);
+        }
+        const payload = await response.json().catch(() => null);
+        const conversation = payload?.data || payload;
         if (!cancelled && conversation?.id) {
           setConversationId(conversation.id);
           if (typeof window !== "undefined") {
@@ -477,16 +495,34 @@ const FreelancerChatContent = () => {
     if (useSocket && socketRef.current) {
       socketRef.current.emit("chat:message", payload);
     } else {
-      apiClient
-        .sendChatMessage({ ...payload, conversationId })
-        .then((response) => {
-          const userMsg =
-            response?.data?.message || response?.message || payload;
-          const assistant =
-            response?.data?.assistant || response?.assistant || null;
-          setMessages((prev) =>
-            assistant ? [...prev, userMsg, assistant] : [...prev, userMsg]
-          );
+      const sender = authFetch
+        ? authFetch(`/chat/conversations/${conversationId}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            skipLogoutOn401: true
+          }).then(async (response) => {
+            if (!response.ok) {
+              throw new Error(`Send failed (status ${response.status})`);
+            }
+            const resPayload = await response.json().catch(() => null);
+            return resPayload?.data?.message || resPayload?.message || payload;
+          })
+        : apiClient
+            .sendChatMessage({ ...payload, conversationId })
+            .then((response) => response?.data?.message || response?.message || payload);
+
+      sender
+        .then((userMsg) => {
+          setMessages((prev) => {
+            const filtered = prev.filter(
+              (msg) =>
+                !msg.pending ||
+                msg.content !== payload.content ||
+                msg.role !== "user"
+            );
+            return [...filtered, userMsg];
+          });
         })
         .catch((error) => {
           console.error("Failed to send message via HTTP:", error);

@@ -541,9 +541,10 @@ const ClientChatContent = () => {
   }, [conversationId, selectedConversation, useSocket, user?.id]);
 
   const handleSendMessage = () => {
-    if (!messageInput.trim()) return;
+    if (!messageInput.trim() || !conversationId) return;
 
     const payload = {
+      conversationId,
       content: messageInput,
       service: selectedConversation?.serviceKey || selectedConversation?.label || SERVICE_LABEL,
       senderId: user?.id || null,
