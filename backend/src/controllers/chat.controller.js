@@ -16,6 +16,7 @@ import {
   listMessages,
   addMessage,
 } from "../lib/chat-store.js";
+import { sendNotificationToUser } from "../lib/notification-util.js";
 
 const MIN_WEBSITE_PRICE = 10000;
 const MIN_WEBSITE_PRICE_DISPLAY = "INR 10,000";
@@ -721,6 +722,12 @@ You have two options:
 2. Consider a more affordable alternative"
 [SUGGESTIONS: Increase Budget | WordPress (₹20,000) | Shopify (₹30,000) | Landing Page (₹10,000)]
 
+AFTER USER SELECTS "Increase Budget":
+If the user's last message is "Increase Budget" or contains "increase", ask:
+"What's your new budget in INR?"
+Wait for their answer before proceeding to timeline.
+DO NOT ask about timeline until you have a valid budget >= minimum.
+
 TIMELINE TOO SHORT - If user's timeline is below minimum:
 DO NOT generate proposal. Instead respond:
 "Your timeline of [user timeline] is shorter than what's required for a quality [project type] project (minimum: [min timeline]).
@@ -728,7 +735,12 @@ DO NOT generate proposal. Instead respond:
 You have two options:
 1. Extend your timeline to at least [min timeline]
 2. Consider a faster alternative"
-[SUGGESTIONS: Extend Timeline | WordPress (15-20 days) | Landing Page (1 week)]`;
+[SUGGESTIONS: Extend Timeline | WordPress (15-20 days) | Landing Page (1 week)]
+
+AFTER USER SELECTS "Extend Timeline":
+If the user's last message is "Extend Timeline" or contains "extend", ask:
+"What's your new timeline?"
+Wait for their answer before generating proposal.`;
 
   return `You are a consultant helping with "${service}" projects. Your job is to gather requirements by asking questions ONE AT A TIME.
 
@@ -776,6 +788,12 @@ If the context says "NEXT ACTION: GENERATE PROPOSAL NOW", first validate:
 1. Is budget >= minimum for their project type?
 2. Is timeline >= minimum for their project type?
 
+VERY IMPORTANT - BUDGET HANDLING:
+- Look at the "CONFIRMED BUDGET" field in the context - this is the MOST RECENT budget the user provided
+- If user said they want to increase budget, then said a new amount like "20k", use "20k" (₹20,000), NOT any earlier amount
+- The CONFIRMED BUDGET is always the correct one to use in the proposal
+- NEVER show an old/rejected budget in the proposal
+
 If YES to both, generate proposal with PRICE included:
 
 [PROPOSAL_DATA]
@@ -790,9 +808,9 @@ Summary: [Brief description of what they're building]
 Features Included:
 - [List features they mentioned]
 
-Estimated Price: [Price based on project type - use the minimum budget as base]
-Timeline: [Their timeline or minimum if theirs was too short]
-Budget: [Their confirmed budget]
+Estimated Price: [Price based on project type]
+Timeline: [Their timeline from CONFIRMED TIMELINE]
+Budget: [Their CONFIRMED BUDGET - must be the LATEST value they provided, NOT any earlier rejected values]
 
 Scope of Work:
 Phase 1: Discovery & Planning
@@ -801,8 +819,8 @@ Phase 3: Development & Integration
 Phase 4: Testing & Deployment
 
 Next Steps:
-1. Confirm scope and pricing
-2. Sign agreement and pay 50% deposit
+1. Review and confirm this proposal
+2. Sign agreement and pay deposit
 3. Kickoff meeting to begin work
 
 To customize this proposal, please use the Edit Proposal option.
@@ -1364,6 +1382,36 @@ export const addConversationMessage = asyncHandler(async (req, res) => {
       attachment: attachment ? attachment : undefined,
     },
   });
+
+  // Update conversation timestamp for sorting
+  await prisma.chatConversation.update({
+    where: { id: conversation.id },
+    data: { updatedAt: new Date() }
+  });
+
+  // Send notification to the other participant
+  // Service key format: CHAT:userId1:userId2
+  const convService = serviceKey || conversation.service || "";
+  const actualSenderId = senderId || req.user?.sub;
+  
+  if (convService.startsWith("CHAT:")) {
+    const parts = convService.split(":");
+    if (parts.length >= 3) {
+      const [, id1, id2] = parts;
+      const recipientId = actualSenderId === id1 ? id2 : id1;
+      console.log(`[Notification] Service: ${convService}, Sender: ${actualSenderId}, Recipient: ${recipientId}`);
+      if (recipientId && recipientId !== actualSenderId) {
+        sendNotificationToUser(recipientId, {
+          type: "chat",
+          title: "New Message",
+          message: `${senderName || "Someone"}: ${content.slice(0, 50)}${content.length > 50 ? "..." : ""}`,
+          data: { conversationId: conversation.id, messageId: userMessage.id }
+        });
+      }
+    }
+  } else {
+    console.log(`[Notification] Skipped - service doesn't start with CHAT: ${convService}`);
+  }
 
   let assistantMessage = null;
 

@@ -11,6 +11,7 @@ import { SendHorizontal, Paperclip, Bot, User, Loader2, Clock4 } from "lucide-re
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiClient, SOCKET_IO_URL, SOCKET_OPTIONS, SOCKET_ENABLED } from "@/lib/api-client";
 import { useAuth } from "@/context/AuthContext";
+import { useNotifications } from "@/context/NotificationContext";
 import { ClientTopBar } from "@/components/client/ClientTopBar";
 import ProposalPanel from "./ProposalPanel";
 
@@ -182,6 +183,7 @@ const ChatArea = ({
 
 const ClientChatContent = () => {
   const { user, authFetch, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { socket: notificationSocket } = useNotifications();
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
@@ -314,11 +316,16 @@ const ClientChatContent = () => {
             name: freelancer.fullName || freelancer.name || freelancer.email || "Freelancer",
             avatar: freelancer.avatar,
             label: item.project?.title || "Project Chat",
-            serviceKey: sharedKey
+            serviceKey: sharedKey,
+            serviceKey: sharedKey,
+            // Add timestamp for sorting - use proposal's updatedAt or createdAt
+            lastActivity: new Date(item.updatedAt || item.createdAt || 0).getTime(),
+            unreadCount: 0
           });
         }
 
-        const finalList = uniq;
+        // Sort by most recent activity (newest first)
+        const finalList = uniq.sort((a, b) => b.lastActivity - a.lastActivity);
 
         if (!cancelled) {
           setConversations(finalList);
@@ -462,7 +469,22 @@ const ClientChatContent = () => {
         return [...filtered, message];
       });
       setSending(false);
+      
+      // Move this conversation to the top (local update for active chat)
+      setConversations((prev) => {
+        const updated = prev.map((conv) => {
+          if ((conv.serviceKey || conv.id) === (selectedConversation?.serviceKey || selectedConversation?.id)) {
+            return { ...conv, lastActivity: Date.now() };
+          }
+          return conv;
+        });
+        return updated.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
+      });
     });
+
+
+
+
 
     socket.on("chat:error", (payload) => {
       console.error("Socket error:", payload);
@@ -510,6 +532,46 @@ const ClientChatContent = () => {
     };
   }, [conversationId, selectedConversation, useSocket, user?.id]);
 
+  // Separate effect for global notifications (sorting and unread counts)
+  useEffect(() => {
+    if (!notificationSocket) return;
+
+    const handleNotification = (data) => {
+      console.log("[ClientChat] Notification received:", data); // Debug log
+      if (data.type === "chat" && data.data) {
+         const { service, senderId } = data.data;
+         
+         setConversations((prev) => {
+           console.log("[ClientChat] Updating conversations for service:", service, "Sender:", senderId);
+           const updated = prev.map(c => {
+             // Match by serviceKey (best) or ID (fallback)
+             const isMatch = (c.serviceKey && c.serviceKey === service) || 
+                             (c.id === senderId); // Match freelancer ID
+             
+             if (isMatch) {
+               console.log("[ClientChat] Matched conversation:", c.name);
+               // Check if this conversation is currently selected
+               const isSelected = (c.serviceKey || c.id) === (selectedConversation?.serviceKey || selectedConversation?.id);
+               return { 
+                 ...c, 
+                 lastActivity: Date.now(),
+                 unreadCount: isSelected ? 0 : (c.unreadCount || 0) + 1
+               };
+             }
+             return c;
+           });
+           
+           return updated.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
+         });
+      }
+    };
+    
+    notificationSocket.on("notification:new", handleNotification);
+    return () => {
+      notificationSocket.off("notification:new", handleNotification);
+    };
+  }, [notificationSocket, selectedConversation]);
+
   const handleSendMessage = () => {
     if (!messageInput.trim() || !conversationId) return;
 
@@ -526,6 +588,17 @@ const ClientChatContent = () => {
     setMessages((prev) => [...prev, { ...payload, role: "user", pending: true }]);
     setMessageInput("");
     setSending(true);
+    
+    // Move this conversation to the top immediately when sending (like WhatsApp)
+    setConversations((prev) => {
+      const updated = prev.map((conv) => {
+        if ((conv.serviceKey || conv.id) === (selectedConversation?.serviceKey || selectedConversation?.id)) {
+          return { ...conv, lastActivity: Date.now() };
+        }
+        return conv;
+      });
+      return updated.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
+    });
 
     if (useSocket && socketRef.current) {
       socketRef.current.emit("chat:message", payload);
@@ -618,11 +691,17 @@ const ClientChatContent = () => {
                   return (
                     <button
                       key={conversation.serviceKey || conversation.id}
-                      onClick={() => setSelectedConversation(conversation)}
                       className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${isActive
                         ? "bg-primary border-primary shadow-sm"
                         : "border-border/50 hover:border-primary/30 hover:bg-muted/50"
                         }`}
+                      onClick={() => {
+                        setSelectedConversation(conversation);
+                        // Reset unread count
+                        setConversations(prev => prev.map(c => 
+                          (c.serviceKey === conversation.serviceKey) ? { ...c, unreadCount: 0 } : c
+                        ));
+                      }}
                     >
                       <Avatar className="h-10 w-10">
                         <AvatarImage
@@ -633,10 +712,19 @@ const ClientChatContent = () => {
                           {conversation.name?.[0] || "C"}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex flex-1 flex-col">
-                        <p className={`font-semibold ${nameClass}`}>{conversation.name}</p>
-                        <p className={`text-xs line-clamp-1 ${labelClass}`}>
-                          {conversation.label || SERVICE_LABEL}
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex justify-between items-center mb-1">
+                          <p className={`truncate font-medium transition-colors ${nameClass}`}>
+                            {conversation.name}
+                          </p>
+                          {conversation.unreadCount > 0 && (
+                            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                              {conversation.unreadCount}
+                            </span>
+                          )}
+                        </div>
+                        <p className={`truncate text-xs transition-colors ${labelClass}`}>
+                          {conversation.label}
                         </p>
                       </div>
                     </button>
