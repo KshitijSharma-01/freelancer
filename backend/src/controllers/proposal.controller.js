@@ -217,12 +217,22 @@ export const updateProposalStatus = asyncHandler(async (req, res) => {
 
     // MARKIFY: If status is ACCEPTED (by freelancer), send an automated chat message to the client.
     if (normalizedStatus === "ACCEPTED" && isFreelancer) {
+      // 1. Update Project Status to "IN_PROGRESS" to close it for other proposals
+      try {
+        await prisma.project.update({
+          where: { id: updated.projectId },
+          data: { status: "IN_PROGRESS" }
+        });
+      } catch (projError) {
+        console.error("Failed to update project status:", projError);
+      }
+
       try {
         const ownerId = updated.project.ownerId;
         const freelancerId = updated.freelancerId;
         const serviceKey = `CHAT:${ownerId}:${freelancerId}`;
 
-        // 1. Find or create conversation
+        // 2. Find or create conversation
         let conversation = await prisma.chatConversation.findFirst({
           where: { service: serviceKey }
         });
@@ -236,17 +246,31 @@ export const updateProposalStatus = asyncHandler(async (req, res) => {
           });
         }
 
-        // 2. Create the message
-        await prisma.chatMessage.create({
+        // 3. Create the message
+        const messageContent = `I have accepted your proposal for "${updated.project.title}". I'm ready to start!`;
+        const userMessage = await prisma.chatMessage.create({
           data: {
             conversationId: conversation.id,
             senderId: freelancerId,
             senderName: updated.freelancer.fullName || updated.freelancer.name || updated.freelancer.email || "Freelancer",
             senderRole: "FREELANCER",
             role: "user",
-            content: `I have accepted your proposal for "${updated.project.title}". I'm ready to start!`
+            content: messageContent
           }
         });
+
+        // 4. Update conversation timestamp
+        await prisma.chatConversation.update({
+          where: { id: conversation.id },
+          data: { updatedAt: new Date() }
+        });
+
+        // 5. Emit detailed socket notification (same as socket.js/chat.controller.js)
+        // Since we are not in a socket handler here, assuming socket is not available to emit chat:message directly
+        // But we can trigger a notification if we import sendNotificationToUser - which we don't have here yet.
+        // For now, rely on polling or the dashboard update.
+        // Ideally we would send a notification here too.
+        
       } catch (chatError) {
         console.error("Failed to send automated acceptance message:", chatError);
         // Don't fail the request, just log it.

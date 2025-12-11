@@ -522,7 +522,7 @@ const devTechFlow = `Conversation format (Development & Tech):
   10) Do you have a preferred technology stack or platform? (Output options as [MULTI_SELECT: React/Next.js | Node.js | PHP/Laravel | WordPress | Python/Django | No Preference])
   11) Do you require any specific integrations? (Output options as [MULTI_SELECT: Stripe/PayPal | Google Maps | Social Login | CRM | Analytics | None])
   12) Will you require ongoing maintenance or support after the launch? (options: Yes (Monthly), Yes (Ad-hoc), No (Handover only))
-  13) What is your estimated budget? Ask for one INR amount (numbers only). If their budget is below what their chosen stack typically needs, suggest a cheaper stack or phased approach with a one-line reason before moving on.
+  13) What is your estimated budget? Ask for one INR amount. (Note to AI: When generating the final proposal, you MUST convert values like "60k" or "1 lakh" into full numbers like "60000" or "100000" without "k" or "lakh"). If their budget is below what their chosen stack typically needs, suggest a cheaper stack or phased approach with a one-line reason before moving on.
  14) What is your target go-live date or timeframe? Keep it simple and plain text (e.g., "by May 30" or "within 6 weeks"). (options: 2-4 weeks, 1-2 months, 2-3 months, Flexible)
   15) Do you require SEO, analytics, or marketing tools? (Output options as [MULTI_SELECT: Basic SEO | Full Marketing | Analytics Setup | None])
   16) Are there any AI features, chatbots, or automation requirements? (Output options as [MULTI_SELECT: AI Chatbot | Content Gen | Data Analysis | None])
@@ -531,7 +531,7 @@ const devTechFlow = `Conversation format (Development & Tech):
 - Be concise (1-2 sentences), respond promptly, and proceed to the next question.
 - Do NOT loop or restart; once key items (summary, features/pages, stack/platform, budget, timeline) are answered, move to proposal generation.`;
 
-const proposalTemplate = `When you have enough answers, generate a proposal in this exact structure. If any field or section is missing info, omit that line/section entirely (do NOT write placeholders like "Not provided" or leave bracket tokens like [Portfolio]). If there are no portfolio links or special requests, drop those sections.
+const proposalTemplate = `When you have enough answers, generate a proposal in this exact structure. If any field or section is missing info, omit that line/section entirely (do NOT write placeholders like "Not provided" or leave bracket tokens like [Portfolio]). If there are no portfolio links or special requests, drop those sections. IMPORTANT: For "Budget", convert any short forms like "60k" to "60000" and "1.5L" to "150000". Do NOT use "k" or "lakh" in the [Budget] field.
 [PROPOSAL_DATA]
 PROJECT PROPOSAL
 Project Title: [Service]

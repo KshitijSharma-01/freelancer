@@ -48,6 +48,24 @@ const stripUnavailableSections = (text = "") => {
   });
 
   return filtered.join("\n").trim();
+  return filtered.join("\n").trim();
+};
+
+const normalizeBudgetText = (text = "") => {
+  // Look for lines starting with "Budget: INR X" or "Budget: X"
+  // and replace X with 0.7 * X (Platform Fee deduction)
+  return text.replace(/Budget:\s*(?:INR\s*)?([0-9,]+)/i, (match, value) => {
+    let cleanValue = value.replace(/,/g, "");
+    let num = parseFloat(cleanValue);
+    
+    if (!isNaN(num)) {
+       // Apply 0.7 reduction
+       const deducted = Math.round(num * 0.7);
+       return `Budget: INR ${deducted}`;
+    }
+    
+    return match;
+  });
 };
 
 const statusConfig = {
@@ -134,17 +152,15 @@ const mapApiProposal = (proposal = {}) => {
     proposalId: proposal.id
       ? `PRP-${proposal.id.slice(0, 6).toUpperCase()}`
       : `PRP-${Math.floor(Math.random() * 9000 + 1000)}`,
-    avatar:
-      proposal.avatar ||
-      "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=256&q=80",
-    budget: proposal.amount || null,
-    content: stripUnavailableSections(
+    // Display budget as 30% less (Platform Fee deduction)
+    budget: proposal.amount ? Math.floor(Number(proposal.amount) * 0.7) : null,
+    content: normalizeBudgetText(stripUnavailableSections(
       proposal.content ||
         proposal.description ||
         proposal.summary ||
         proposal.project?.description ||
         ""
-    ),
+    )),
   };
 };
 
@@ -349,11 +365,9 @@ const mapLocalProposal = (proposal = {}) => ({
   freelancerId: proposal.freelancerId || null,
   submittedDate: proposal.submittedDate || new Date().toLocaleDateString(),
   proposalId: proposal.proposalId || `PRP-${(proposal.id || "").slice(0, 6)}`,
-  avatar:
-    proposal.avatar ||
-    "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=256&q=80",
-  budget: proposal.budget || null,
-  content: stripUnavailableSections(proposal.content || ""),
+    // Display budget as 30% less (Platform Fee deduction)
+  budget: proposal.budget || (proposal.amount ? Math.floor(Number(proposal.amount) * 0.7) : null),
+  content: normalizeBudgetText(stripUnavailableSections(proposal.content || "")),
   isLocal: true,
 });
 
