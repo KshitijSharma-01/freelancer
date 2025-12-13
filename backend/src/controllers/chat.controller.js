@@ -17,6 +17,15 @@ import {
   addMessage,
 } from "../lib/chat-store.js";
 import { sendNotificationToUser } from "../lib/notification-util.js";
+import {
+  buildConversationState,
+  processUserAnswer,
+  getNextHumanizedQuestion,
+  shouldGenerateProposal,
+  generateProposalFromState,
+  getOpeningMessage,
+} from "../lib/conversation-state.js";
+
 
 const MIN_WEBSITE_PRICE = 10000;
 const MIN_WEBSITE_PRICE_DISPLAY = "INR 10,000";
@@ -33,129 +42,129 @@ const STACK_BUDGET_FLOORS = {
 
 // Project-specific minimum timelines and pricing
 const PROJECT_REQUIREMENTS = {
-  "Landing Page": { 
-    minDays: 7, 
-    displayTime: "1 week", 
-    minBudget: 10000, 
+  "Landing Page": {
+    minDays: 7,
+    displayTime: "1 week",
+    minBudget: 10000,
     displayBudget: "₹10,000",
     alternatives: []
   },
-  "WordPress": { 
-    minDays: 15, 
-    displayTime: "15-20 days", 
-    minBudget: 20000, 
+  "WordPress": {
+    minDays: 15,
+    displayTime: "15-20 days",
+    minBudget: 20000,
     displayBudget: "₹20,000",
     alternatives: ["Landing Page (₹10,000, 1 week)"]
   },
-  "Shopify": { 
-    minDays: 15, 
-    displayTime: "15-20 days", 
-    minBudget: 30000, 
+  "Shopify": {
+    minDays: 15,
+    displayTime: "15-20 days",
+    minBudget: 30000,
     displayBudget: "₹30,000",
     alternatives: ["WordPress (₹20,000, 15-20 days)", "Landing Page (₹10,000, 1 week)"]
   },
-  "3D WordPress": { 
-    minDays: 20, 
-    displayTime: "20-25 days", 
-    minBudget: 45000, 
+  "3D WordPress": {
+    minDays: 20,
+    displayTime: "20-25 days",
+    minBudget: 45000,
     displayBudget: "₹45,000",
     alternatives: ["WordPress (₹20,000, 15-20 days)", "Shopify (₹30,000, 15-20 days)"]
   },
-  "3D Shopify": { 
-    minDays: 20, 
-    displayTime: "20-25 days", 
-    minBudget: 45000, 
+  "3D Shopify": {
+    minDays: 20,
+    displayTime: "20-25 days",
+    minBudget: 45000,
     displayBudget: "₹45,000",
     alternatives: ["Shopify (₹30,000, 15-20 days)", "WordPress (₹20,000, 15-20 days)"]
   },
-  "Webflow": { 
-    minDays: 20, 
-    displayTime: "20-28 days", 
-    minBudget: 80000, 
+  "Webflow": {
+    minDays: 20,
+    displayTime: "20-28 days",
+    minBudget: 80000,
     displayBudget: "₹80,000",
     alternatives: ["WordPress (₹20,000, 15-20 days)", "Shopify (₹30,000, 15-20 days)"]
   },
-  "Framer": { 
-    minDays: 20, 
-    displayTime: "20-28 days", 
-    minBudget: 80000, 
+  "Framer": {
+    minDays: 20,
+    displayTime: "20-28 days",
+    minBudget: 80000,
     displayBudget: "₹80,000",
     alternatives: ["WordPress (₹20,000, 15-20 days)", "Shopify (₹30,000, 15-20 days)"]
   },
-  "Custom E-commerce": { 
-    minDays: 30, 
-    displayTime: "30-60 days", 
-    minBudget: 150000, 
+  "Custom E-commerce": {
+    minDays: 30,
+    displayTime: "30-60 days",
+    minBudget: 150000,
     displayBudget: "₹1,50,000",
     alternatives: ["Shopify (₹30,000, 15-20 days)", "WordPress + WooCommerce (₹30,000, 20 days)"]
   },
-  "E-Commerce Platform": { 
-    minDays: 30, 
-    displayTime: "30-60 days", 
-    minBudget: 75000, 
+  "E-Commerce Platform": {
+    minDays: 30,
+    displayTime: "30-60 days",
+    minBudget: 75000,
     displayBudget: "₹75,000",
     alternatives: ["Shopify (₹30,000, 15-20 days)", "WordPress + WooCommerce (₹30,000, 20 days)"]
   },
-  "App": { 
-    minDays: 60, 
-    displayTime: "2 months", 
-    minBudget: 200000, 
+  "App": {
+    minDays: 60,
+    displayTime: "2 months",
+    minBudget: 200000,
     displayBudget: "₹2,00,000",
     alternatives: ["Web App (₹75,000, 45-60 days)", "Landing Page + PWA (₹40,000, 3 weeks)"]
   },
-  "Mobile App": { 
-    minDays: 60, 
-    displayTime: "2 months", 
-    minBudget: 200000, 
+  "Mobile App": {
+    minDays: 60,
+    displayTime: "2 months",
+    minBudget: 200000,
     displayBudget: "₹2,00,000",
     alternatives: ["Web App (₹75,000, 45-60 days)", "Landing Page + PWA (₹40,000, 3 weeks)"]
   },
-  "Mobile Application": { 
-    minDays: 60, 
-    displayTime: "2 months", 
-    minBudget: 200000, 
+  "Mobile Application": {
+    minDays: 60,
+    displayTime: "2 months",
+    minBudget: 200000,
     displayBudget: "₹2,00,000",
     alternatives: ["Web App (₹75,000, 45-60 days)", "Landing Page + PWA (₹40,000, 3 weeks)"]
   },
-  "Web Application/SaaS": { 
-    minDays: 45, 
-    displayTime: "45-60 days", 
-    minBudget: 75000, 
+  "Web Application/SaaS": {
+    minDays: 45,
+    displayTime: "45-60 days",
+    minBudget: 75000,
     displayBudget: "₹75,000",
     alternatives: ["WordPress + Plugins (₹35,000, 20 days)", "Landing Page + Forms (₹15,000, 1 week)"]
   },
-  "SaaS": { 
-    minDays: 45, 
-    displayTime: "45-60 days", 
-    minBudget: 75000, 
+  "SaaS": {
+    minDays: 45,
+    displayTime: "45-60 days",
+    minBudget: 75000,
     displayBudget: "₹75,000",
     alternatives: ["WordPress + Plugins (₹35,000, 20 days)", "Landing Page + Forms (₹15,000, 1 week)"]
   },
-  "Website": { 
-    minDays: 15, 
-    displayTime: "15-20 days", 
-    minBudget: 20000, 
+  "Website": {
+    minDays: 15,
+    displayTime: "15-20 days",
+    minBudget: 20000,
     displayBudget: "₹20,000",
     alternatives: ["Landing Page (₹10,000, 1 week)"]
   },
-  "React/Next.js": { 
-    minDays: 30, 
-    displayTime: "30-45 days", 
-    minBudget: 60000, 
+  "React/Next.js": {
+    minDays: 30,
+    displayTime: "30-45 days",
+    minBudget: 60000,
     displayBudget: "₹60,000",
     alternatives: ["WordPress (₹20,000, 15-20 days)", "Webflow (₹80,000, 20-28 days)"]
   },
-  "Node.js": { 
-    minDays: 30, 
-    displayTime: "30-45 days", 
-    minBudget: 60000, 
+  "Node.js": {
+    minDays: 30,
+    displayTime: "30-45 days",
+    minBudget: 60000,
     displayBudget: "₹60,000",
     alternatives: ["Laravel (₹40,000, 25-30 days)", "WordPress (₹20,000, 15-20 days)"]
   },
-  "Laravel": { 
-    minDays: 25, 
-    displayTime: "25-30 days", 
-    minBudget: 40000, 
+  "Laravel": {
+    minDays: 25,
+    displayTime: "25-30 days",
+    minBudget: 40000,
     displayBudget: "₹40,000",
     alternatives: ["WordPress (₹20,000, 15-20 days)"]
   },
@@ -344,11 +353,11 @@ const getDefaultFeatures = (projectType) => {
 // Generate proposal directly from extracted info
 const generateDirectProposal = (info, service) => {
   const defaultFeatures = getDefaultFeatures(info.projectType);
-  
+
   // Get pricing from PROJECT_REQUIREMENTS
-  const projectReq = PROJECT_REQUIREMENTS[info.projectType] || 
-                     PROJECT_REQUIREMENTS[info.techStack] || 
-                     PROJECT_REQUIREMENTS["Website"];
+  const projectReq = PROJECT_REQUIREMENTS[info.projectType] ||
+    PROJECT_REQUIREMENTS[info.techStack] ||
+    PROJECT_REQUIREMENTS["Website"];
   const estimatedPrice = projectReq?.displayBudget || "To be discussed";
   const estimatedTimeline = projectReq?.displayTime || info.timeline || "To be discussed";
 
@@ -579,8 +588,22 @@ Generated from questionnaire answers - edit if you'd like to add more specifics 
 const getQuestionsForService = (service = "") =>
   SERVICE_QUESTION_SETS[service] || DEFAULT_QUESTIONS;
 
-const getInstructions = () => {
+const getInstructions = (service = "") => {
   try {
+    // Try service-specific instructions first
+    if (service) {
+      // Convert service name to filename slug (e.g., "Video Services" -> "video-services")
+      const serviceSlug = service.toLowerCase()
+        .replace(/&/g, '-')
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '');
+      const servicePath = path.join(process.cwd(), "src", "data", "services", `${serviceSlug}.md`);
+      if (fs.existsSync(servicePath)) {
+        console.log(`Loading service-specific instructions for: ${service} from ${servicePath}`);
+        return fs.readFileSync(servicePath, "utf-8");
+      }
+    }
+    // Fallback to general instructions
     const filePath = path.join(process.cwd(), "src", "data", "instructions.md");
     return fs.readFileSync(filePath, "utf-8");
   } catch (error) {
@@ -588,6 +611,7 @@ const getInstructions = () => {
     return "";
   }
 };
+
 const summarizeContext = (messages = []) => {
   if (!messages.length) return "";
 
@@ -636,15 +660,15 @@ const summarizeContext = (messages = []) => {
   // Extract the LATEST budget and timeline from user messages
   let latestBudget = null;
   let latestTimeline = null;
-  
+
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role === "user") {
       const content = (msg.content || "").toLowerCase();
       // Check for budget patterns
       if (!latestBudget) {
-        const budgetMatch = content.match(/(\d+)\s*k\b/i) || 
-                           content.match(/₹?\s*(\d{1,3}(?:,?\d{3})*)/);
+        const budgetMatch = content.match(/(\d+)\s*k\b/i) ||
+          content.match(/₹?\s*(\d{1,3}(?:,?\d{3})*)/);
         if (budgetMatch) {
           let amount = parseInt(budgetMatch[1].replace(/,/g, ""));
           if (/\d+\s*k\b/i.test(content)) amount *= 1000;
@@ -691,7 +715,7 @@ const buildSystemPrompt = (service) => {
   const servicePolicy = getWebsitePolicy(service);
   const counterQuestion = getCounterQuestion();
   const questions = getQuestionsForService(service);
-  const instructions = getInstructions();
+  const instructions = getInstructions(service);
   const questionLines = questions
     .map((q, idx) => `${idx + 1}) ${q.text}`)
     .join("\n");
@@ -855,11 +879,55 @@ export const generateChatReply = async ({
   const systemContent = buildSystemPrompt(service || "");
   const safeHistory = Array.isArray(history) ? history.slice(-50) : [];
 
+  // ======== STATE MACHINE FLOW (NO AI NEEDED FOR BASIC QUESTIONS) ========
+  // Use deterministic state machine for standard question flow
+  try {
+    // Handle first message (no history) - return opening + first question
+    if (safeHistory.length === 0) {
+      console.log("🎬 State Machine: Starting new conversation");
+      const state = buildConversationState([], service);
+      const openingMsg = getOpeningMessage(service);
+      const firstQuestion = getNextHumanizedQuestion(state);
+      return `${openingMsg}\n\n${firstQuestion}`;
+    }
+
+    // Build state from conversation history
+    const state = buildConversationState(safeHistory, service);
+    console.log(`📊 State Machine: Step ${state.currentStep}, Collected: ${Object.keys(state.collectedData).join(", ")}`);
+
+    // Process user's current answer
+    const updatedState = processUserAnswer(state, message);
+
+    // Check if ready for proposal
+    if (shouldGenerateProposal(updatedState)) {
+      console.log("🎯 State Machine: Generating proposal from collected data");
+      return generateProposalFromState(updatedState);
+    }
+
+    // Get next humanized question
+    const nextQuestion = getNextHumanizedQuestion(updatedState);
+    if (nextQuestion) {
+      console.log("💬 State Machine: Returning next question");
+      return nextQuestion;
+    }
+
+    // If no next question but not ready for proposal, something's wrong
+    // Return a generic fallback instead of falling to AI
+    console.log("⚠️ State Machine: No next question, generating proposal anyway");
+    return generateProposalFromState(updatedState);
+  } catch (stateError) {
+    console.log("⚠️ State Machine: Error -", stateError.message);
+    // Return a simple error message instead of falling to AI
+    return "I'm having trouble processing that. Could you try again?";
+  }
+  // ======== END STATE MACHINE FLOW ========
+
   // IMPORTANT: Include the current message in context calculation
   const historyWithCurrentMessage = [
     ...safeHistory,
     { role: "user", content: message }
   ];
+
 
   // ======== SMART MESSAGE PARSING ========
   // Check if user provided all info in ONE message (skip questions entirely)
@@ -1393,7 +1461,7 @@ export const addConversationMessage = asyncHandler(async (req, res) => {
   // Service key format: CHAT:userId1:userId2
   const convService = serviceKey || conversation.service || "";
   const actualSenderId = senderId || req.user?.sub;
-  
+
   if (convService.startsWith("CHAT:")) {
     const parts = convService.split(":");
     if (parts.length >= 3) {
@@ -1405,8 +1473,8 @@ export const addConversationMessage = asyncHandler(async (req, res) => {
           type: "chat",
           title: "New Message",
           message: `${senderName || "Someone"}: ${content.slice(0, 50)}${content.length > 50 ? "..." : ""}`,
-          data: { 
-            conversationId: conversation.id, 
+          data: {
+            conversationId: conversation.id,
             messageId: userMessage.id,
             service: convService,
             senderId: actualSenderId
