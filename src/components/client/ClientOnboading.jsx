@@ -98,7 +98,7 @@ const features = [
 
 // Custom Matrix Pattern component for background - always visible (masked by mouse) without hover dependency
 function MatrixPattern({ mouseX, mouseY, randomString }) {
-  const maskImage = useMotionTemplate`radial-gradient(150px at ${mouseX}px ${mouseY}px, white, transparent)`; // Reduced radius for subtler effect
+  const maskImage = useMotionTemplate`radial-gradient(250px at ${mouseX}px ${mouseY}px, rgba(255,255,255,1) 0%, rgba(255,255,255,0.85) 20%, rgba(255,255,255,0.6) 40%, rgba(255,255,255,0.35) 60%, rgba(255,255,255,0.15) 80%, transparent 100%)`; // Softer edges, more visible in light mode
   const style = { maskImage, WebkitMaskImage: maskImage };
 
   return (
@@ -123,7 +123,7 @@ function MatrixPattern({ mouseX, mouseY, randomString }) {
 const ClientOnboading = () => {
   const [selectedService, setSelectedService] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  
+
   // Matrix effect state
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
@@ -136,10 +136,10 @@ const ClientOnboading = () => {
     const handleMouseMove = (event) => {
       mouseX.set(event.clientX);
       mouseY.set(event.clientY);
-      
+
       // Optional: Regenerate string on movement for dynamic effect
-       const str = generateRandomString(20000);
-       setRandomString(str);
+      const str = generateRandomString(20000);
+      setRandomString(str);
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -152,8 +152,8 @@ const ClientOnboading = () => {
   };
 
   return (
-    <section 
-      className="mt-10 space-y-6 text-foreground transition-colors relative" 
+    <section
+      className="mt-10 space-y-6 text-foreground transition-colors relative"
     >
       {/* Matrix Background Layer - Fixed to cover whole screen */}
       <div className="fixed inset-0 z-[0] pointer-events-none overflow-hidden">
