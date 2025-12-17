@@ -217,6 +217,11 @@ const ChatDialog = ({ isOpen, onClose, service }) => {
 
     socket.on("chat:error", (payload) => {
       console.error("Socket error:", payload);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg?.pending ? { ...msg, pending: false, failed: true } : msg
+        )
+      );
       setIsLoading(false);
     });
 
@@ -333,14 +338,17 @@ const ChatDialog = ({ isOpen, onClose, service }) => {
       skipAssistant: false,
       mode: "assistant",
       ephemeral: isLocalhost,
-      history: messages.slice(-50).map((m) => ({
-        role:
-          (m?.role || "").toLowerCase() === "assistant" ||
-            (m?.senderName || "").toLowerCase() === "assistant"
-            ? "assistant"
-            : "user",
-        content: m?.content || ""
-      }))
+      history: messages
+        .filter((m) => !m?.pending && !m?.failed)
+        .slice(-50)
+        .map((m) => ({
+          role:
+            (m?.role || "").toLowerCase() === "assistant" ||
+              (m?.senderName || "").toLowerCase() === "assistant"
+              ? "assistant"
+              : "user",
+          content: m?.content || ""
+        }))
     };
 
     if (useSocket && socketRef.current) {
@@ -407,6 +415,14 @@ const ChatDialog = ({ isOpen, onClose, service }) => {
       })
       .catch((error) => {
         console.error("Failed to send chat via HTTP:", error);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.pending && msg.role === "user" && msg.content === msgContent
+              ? { ...msg, pending: false, failed: true }
+              : msg
+          )
+        );
+        setIsLoading(false);
       })
       .finally(() => {
         queueMicrotask(() => inputRef.current?.focus());
@@ -453,6 +469,8 @@ const ChatDialog = ({ isOpen, onClose, service }) => {
       window.localStorage.removeItem(storageKey);
       window.localStorage.removeItem(messageStorageKey);
     }
+    setIsLoading(false);
+    loadingSinceRef.current = null;
     setConversationId(null);
     setMessages([]);
     apiClient.createChatConversation({ service: serviceKey, forceNew: true, mode: "assistant", ephemeral: true }).then(conversation => {
@@ -560,6 +578,21 @@ const ChatDialog = ({ isOpen, onClose, service }) => {
                             ) : null}
                           </div>
                           {cleanContent || msg.content}
+                          {msg.failed && (
+                            <div className="mt-2 text-xs text-destructive">
+                              Failed to send.
+                              <button
+                                type="button"
+                                className="ml-2 underline underline-offset-2"
+                                onClick={() => {
+                                  setInput(msg.content || "");
+                                  queueMicrotask(() => inputRef.current?.focus());
+                                }}
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
                           {hasProposal && (
                             <Button
                               variant="link"
