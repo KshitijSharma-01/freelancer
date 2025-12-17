@@ -49,7 +49,7 @@ export const questions = [
       "need"
     ],
     "templates": [
-      "What kind of website do you need? (Select all that apply) 🌐"
+      "What kind of website do you need?"
     ],
     "suggestions": [
       "Landing Page",
@@ -59,8 +59,7 @@ export const questions = [
       "Portfolio",
       "Web App",
       "Other"
-    ],
-    "multiSelect": true
+    ]
   },
   {
     "key": "pages",

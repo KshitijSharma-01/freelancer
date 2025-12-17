@@ -223,7 +223,8 @@ const isGreetingMessage = (value = "") => {
 
     const text = raw
         .toLowerCase()
-        .replace(/[!.,]+$/g, "")
+        .replace(/[^a-z0-9'\s]/g, " ")
+        .replace(/\s+/g, " ")
         .trim();
 
     // Treat as a greeting only when the message is basically *just* a greeting.
@@ -231,7 +232,15 @@ const isGreetingMessage = (value = "") => {
     // Examples that should NOT count: "hi i need a website", "hello can you help with SEO?"
     if (text.length > 20) return false;
 
-    return /^(hi|hello|hey|hii+|yo|sup|what'?s up|whats up)(\s+there)?$/.test(text);
+    const compact = text.replace(/\s+/g, "");
+
+    if (/^(hi|hey|yo|sup|hii+)(there)?$/.test(compact)) return true;
+    if (/^(what'?sup|whatsup)(there)?$/.test(compact)) return true;
+
+    // Common "hello" variations / typos: hello, helloo, hellooo, hellow, helo, hlo.
+    if (/^(hell+o+w*|helo+|hlo+|hlw+)(there)?$/.test(compact)) return true;
+
+    return false;
 };
 
 const isSkipMessage = (value = "") => {
@@ -326,15 +335,61 @@ const isUserQuestion = (value = "") => {
     return /^(can|could|would|should|do|does|is|are|will|may|what|why|how|when|where|which)\b/i.test(text);
 };
 
+const NON_NAME_SINGLE_TOKENS = new Set([
+    "there",
+    "bro",
+    "buddy",
+    "sir",
+    "madam",
+    "maam",
+    "mam",
+    "boss",
+    "team",
+    "everyone",
+    "guys",
+    "all",
+    "friend",
+    "mate",
+    "pal",
+    "dude",
+    "help",
+    "support",
+    "please",
+    "plz",
+    "thanks",
+    "thankyou",
+    "thx",
+    "ok",
+    "okay",
+    "sure",
+    "yes",
+    "yep",
+    "no",
+    "nope",
+    "nah",
+]);
+
 const isLikelyName = (value = "") => {
     const text = normalizeText(value).replace(/\?/g, "");
     if (!text) return false;
     if (text.length > 40) return false;
+    if (isGreetingMessage(text)) return false;
+    if (isUserQuestion(text)) return false;
     if (/\bhttps?:\/\//i.test(text) || /\bwww\./i.test(text)) return false;
     if (text.includes("@")) return false;
     if (/\d{2,}/.test(text)) return false;
+
+    const tokens = text
+        .toLowerCase()
+        .replace(/[^a-z'\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .split(" ")
+        .filter(Boolean);
+
+    if (tokens.length === 1 && NON_NAME_SINGLE_TOKENS.has(tokens[0])) return false;
     if (
-        /(budget|timeline|website|web\s*app|app|project|need|want|build|looking|landing|page|portfolio|e-?commerce|ecommerce|shopify|wordpress|react|next|mern|pern|saas|dashboard)\b/i.test(
+        /(budget|timeline|website|web\s*app|app|project|proposal|quote|pricing|price|cost|estimate|generate|need|want|build|looking|landing|page|portfolio|e-?commerce|ecommerce|shopify|wordpress|react|next|mern|pern|saas|dashboard)\b/i.test(
             text
         )
     ) {
@@ -344,8 +399,17 @@ const isLikelyName = (value = "") => {
 };
 
 const extractName = (value = "") => {
-    const text = normalizeText(value).replace(/\?/g, "");
+    let text = normalizeText(value).replace(/\?/g, "");
     if (!text) return null;
+    if (isGreetingMessage(text)) return null;
+
+    // Handle common patterns like "hi kaif", "hello harsh" without treating the greeting as part of the name.
+    const leadingGreeting = text.match(/^(?:hi|hey|yo|sup|hii+|hello|hell+o+w*|helo+|hlo+|hlw+)\b\s+(.+)$/i);
+    if (leadingGreeting) {
+        text = normalizeText(leadingGreeting[1]);
+        if (!text) return null;
+        if (isGreetingMessage(text)) return null;
+    }
 
     const explicitMatch = text.match(/\b(?:my\s+name\s+is|name\s+is)\s+(.+)$/i);
     if (explicitMatch) {
@@ -371,6 +435,24 @@ const extractExplicitName = (value = "") => {
     return isLikelyName(limited) ? limited : null;
 };
 
+const stripInternalTags = (value = "") =>
+    normalizeText(value).replace(/\[(?:QUESTION_KEY|SUGGESTIONS|MULTI_SELECT):[\s\S]*?\]/gi, "").trim();
+
+const extractNameFromAssistantMessage = (value = "") => {
+    const text = stripInternalTags(value);
+    if (!text) return null;
+
+    // Common template across services: "Nice to meet you, {name}!"
+    const match = text.match(/\bnice\s+to\s+meet\s+you,?\s+(.+?)(?:[!.,\n]|$)/i);
+    if (!match) return null;
+
+    const candidate = trimEntity(match[1]);
+    const limited = candidate.split(/\s+/).slice(0, 3).join(" ");
+    if (!limited) return null;
+    if (isGreetingMessage(limited)) return null;
+    return isLikelyName(limited) ? limited : null;
+};
+
 const getCurrentStepFromCollected = (questions = [], collectedData = {}) => {
     for (let i = 0; i < questions.length; i++) {
         const key = questions[i]?.key;
@@ -383,9 +465,61 @@ const getCurrentStepFromCollected = (questions = [], collectedData = {}) => {
     return questions.length;
 };
 
+const getQuestionFocusKeyFromUserMessage = (questions = [], message = "") => {
+    const text = normalizeText(message);
+    if (!text) return null;
+
+    const messageLower = text.toLowerCase();
+    const messageCanonical = canonicalize(messageLower);
+    if (!messageCanonical) return null;
+
+    let bestKey = null;
+    let bestScore = 0;
+
+    for (const question of questions) {
+        const key = question?.key;
+        if (!key) continue;
+
+        const patterns = new Set();
+        patterns.add(key.replace(/_/g, " "));
+        if (Array.isArray(question.patterns)) {
+            for (const pattern of question.patterns) {
+                const cleaned = normalizeText(pattern);
+                if (cleaned) patterns.add(cleaned);
+            }
+        }
+
+        let score = 0;
+        for (const pattern of patterns) {
+            const patternLower = pattern.toLowerCase();
+            if (!patternLower) continue;
+
+            if (!patternLower.includes(" ")) {
+                const re = new RegExp(`\\b${escapeRegExp(patternLower)}\\b`, "i");
+                if (re.test(messageLower)) score += Math.min(patternLower.length, 12);
+                continue;
+            }
+
+            const patternCanonical = canonicalize(patternLower);
+            if (patternCanonical && messageCanonical.includes(patternCanonical)) {
+                score += Math.min(patternCanonical.length, 16);
+            }
+        }
+
+        if (score > bestScore) {
+            bestKey = key;
+            bestScore = score;
+        }
+    }
+
+    if (!bestKey || bestScore < 4) return null;
+    return bestKey;
+};
+
 const extractKnownFieldsFromMessage = (questions = [], message = "", collectedData = {}) => {
     const text = normalizeText(message);
     if (!text || isGreetingMessage(text)) return {};
+    const userAskedQuestion = isUserQuestion(text);
 
     const keys = new Set(questions.map((q) => q.key));
     const updates = {};
@@ -433,7 +567,7 @@ const extractKnownFieldsFromMessage = (questions = [], message = "", collectedDa
                     ? "vision"
                     : null;
 
-    if (descriptionKey && !collectedData[descriptionKey] && !isUserQuestion(text)) {
+    if (descriptionKey && !collectedData[descriptionKey] && !userAskedQuestion) {
         const hasIntentVerb = /(need|looking|build|create|develop|want|require|make)\b/i.test(text);
         const hasIsA = /\b(?:it\s+is|it's|it’s|this\s+is)\b/i.test(text);
         const hasProjectNoun =
@@ -446,6 +580,46 @@ const extractKnownFieldsFromMessage = (questions = [], message = "", collectedDa
         if (looksDescriptive) {
             updates[descriptionKey] = text;
         }
+    }
+
+    // Out-of-sequence extraction for closed-set questions (suggestions).
+    // This helps when users mention things early like "React + Node" or "host on Vercel".
+    for (const question of questions) {
+        const key = question?.key;
+        if (!key) continue;
+        if (!keys.has(key)) continue;
+        if (updates[key] !== undefined) continue;
+
+        // Avoid inferring selections from user questions (they're often exploratory, not confirmations).
+        if (userAskedQuestion) continue;
+        if (collectedData[key] !== undefined && collectedData[key] !== null && normalizeText(collectedData[key]) !== "") {
+            continue;
+        }
+        if (!Array.isArray(question?.suggestions) || question.suggestions.length === 0) continue;
+
+        // Pages can be accidentally inferred from generic words (e.g. "help"), so always ask explicitly.
+        if (key === "pages") continue;
+
+        const matches = matchSuggestionsInMessage(question, text);
+        if (!matches.length) continue;
+
+        const textCanonical = canonicalize(text.toLowerCase());
+        const isShort = text.length <= 90;
+        const hasListSeparators = /[,|\n]/.test(text);
+        const hasKeyPatterns = Array.isArray(question.patterns)
+            ? question.patterns.some((pattern) => {
+                const canon = canonicalize(pattern || "");
+                return canon ? textCanonical.includes(canon) : false;
+            })
+            : false;
+
+        // Only accept out-of-sequence suggestion inference when the message looks like a direct selection.
+        // This avoids accidental matches in long, descriptive messages.
+        if (!isShort && !hasListSeparators && !hasKeyPatterns && !(question.multiSelect && matches.length >= 2)) {
+            continue;
+        }
+
+        updates[key] = question.multiSelect ? matches.join(", ") : matches[0];
     }
 
     return updates;
@@ -571,6 +745,19 @@ export function buildConversationState(history, service) {
         }
     }
 
+    // Recover name from assistant messages when the user provided it before the first tagged question.
+    // Example: seeded opening prompt -> user sends "Kaif" -> assistant moves on to company.
+    if (!collectedData.name && questions.some((q) => q.key === "name")) {
+        for (const msg of safeHistory) {
+            if (msg?.role !== "assistant") continue;
+            const inferred = extractNameFromAssistantMessage(msg.content);
+            if (inferred) {
+                collectedData.name = inferred;
+                break;
+            }
+        }
+    }
+
     const currentStep = getCurrentStepFromCollected(questions, collectedData);
 
     return {
@@ -592,6 +779,7 @@ export function processUserAnswer(state, message) {
     const questions = Array.isArray(state?.questions) ? state.questions : [];
     const collectedData = { ...(state?.collectedData || {}) };
     const normalized = normalizeText(message);
+    const wasQuestion = isUserQuestion(normalized);
 
     const activeStep = Number.isInteger(state?.currentStep)
         ? state.currentStep
@@ -628,6 +816,15 @@ export function processUserAnswer(state, message) {
     }
 
     const currentStep = getCurrentStepFromCollected(questions, collectedData);
+    const focusKey = wasQuestion
+        ? getQuestionFocusKeyFromUserMessage(questions, normalized)
+        : null;
+    const nextQuestionKey =
+        focusKey &&
+        (!collectedData[focusKey] || normalizeText(collectedData[focusKey]) === "") &&
+        focusKey !== questions[currentStep]?.key
+            ? focusKey
+            : null;
 
     return {
         ...state,
@@ -637,7 +834,9 @@ export function processUserAnswer(state, message) {
         isComplete: currentStep >= questions.length,
         meta: {
             answeredKey,
-            wasQuestion: isUserQuestion(normalized),
+            wasQuestion,
+            focusKey,
+            nextQuestionKey,
         },
     };
 }
@@ -654,7 +853,15 @@ export function getNextHumanizedQuestion(state) {
         return null; // Ready for proposal
     }
 
-    const question = questions[currentStep];
+    const overrideKey = state?.meta?.nextQuestionKey;
+    const overrideIndex = overrideKey
+        ? questions.findIndex((q) => q.key === overrideKey)
+        : -1;
+    const shouldOverride =
+        overrideIndex >= 0 &&
+        (!collectedData?.[overrideKey] || normalizeText(collectedData[overrideKey]) === "");
+
+    const question = questions[shouldOverride ? overrideIndex : currentStep];
     const templates = question.templates || [];
 
     // Pick random template for variety
