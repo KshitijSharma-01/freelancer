@@ -7,6 +7,7 @@ import { chatRouter } from "./chat.routes.js";
 import { projectRouter } from "./project.routes.js";
 import { proposalRouter } from "./proposal.routes.js";
 import { disputeRouter } from "./dispute.routes.js";
+import adminRouter from "./admin.routes.js";
 
 export const apiRouter = Router();
 
@@ -18,3 +19,4 @@ apiRouter.use("/chat", chatRouter);
 apiRouter.use("/projects", projectRouter);
 apiRouter.use("/proposals", proposalRouter);
 apiRouter.use("/disputes", disputeRouter);
+apiRouter.use("/admin", adminRouter);
