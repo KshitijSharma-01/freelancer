@@ -47,7 +47,13 @@ export const listDisputes = asyncHandler(async (req, res) => {
     include: {
       project: {
         include: {
-          owner: true
+          owner: true,
+          proposals: {
+            where: { status: 'ACCEPTED' },
+            include: {
+              freelancer: true
+            }
+          }
         }
       },
       raisedBy: true,
@@ -66,7 +72,14 @@ export const getDispute = asyncHandler(async (req, res) => {
   const dispute = await prisma.dispute.findUnique({
     where: { id },
     include: {
-      project: true,
+      project: {
+        include: {
+          proposals: {
+            where: { status: 'ACCEPTED' },
+            include: { freelancer: true }
+          }
+        }
+      },
       raisedBy: true,
       manager: true
     }
