@@ -1273,26 +1273,6 @@ const extractNameFromAssistantMessage = (value = "") => {
     return isLikelyName(limited) ? limited : null;
 };
 
-const stripInternalTags = (value = "") =>
-    normalizeText(value)
-        .replace(/\[(?:QUESTION_KEY|SUGGESTIONS|MULTI_SELECT|MAX_SELECT):[\s\S]*?\]/gi, "")
-        .trim();
-
-const extractNameFromAssistantMessage = (value = "") => {
-    const text = stripInternalTags(value);
-    if (!text) return null;
-
-    // Common template across services: "Nice to meet you, {name}!"
-    const match = text.match(/\bnice\s+to\s+meet\s+you,?\s+(.+?)(?:[!.,\n]|$)/i);
-    if (!match) return null;
-
-    const candidate = trimEntity(match[1]);
-    const limited = candidate.split(/\s+/).slice(0, 3).join(" ");
-    if (!limited) return null;
-    if (isGreetingMessage(limited)) return null;
-    return isLikelyName(limited) ? limited : null;
-};
-
 const getCurrentStepFromCollected = (questions = [], collectedData = {}) => {
     const applyWebsiteBudgetRules =
         questions.some((q) => q?.key === "tech") &&
